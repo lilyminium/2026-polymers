@@ -1,0 +1,88 @@
+# Conda/mamba equivalent of pixi.toml's [feature.cuda] / `cuda` environment.
+# linux-64 + CUDA 12.9 only (matches pixi.toml's system-requirements) -- this
+# will not solve on macOS. Needed for the PRESTO fit and production
+# explicit-solvent MD; see the "GPU / cluster steps" section of README.md.
+#
+#   mamba env create -f environment-cuda.yaml      (or: conda env create -f environment-cuda.yaml)
+#   mamba activate peg-workshop-cuda
+#   python scripts/train_presto.py                 # or run_md_explicit.py
+#
+# Keep in sync with environment.yaml (CPU) and pixi.toml's [feature.cuda].
+name: peg-workshop-cuda
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python >=3.12,<3.13          # openff-qcsubmit caps python at <3.13
+
+  # --- OpenFF stack (pulls rdkit, openmm, openff-toolkit, openff-interchange) ---
+  - openff-toolkit >=0.17.1
+  - rdkit >=2024.09             # >=2024.09 for openff-pablo 0.2.x (atropisomer sanitize flag)
+  - openff-packmol               # pack_box wrapper for the Part 1.2 demo
+  - packmol                      # the packmol binary it drives
+  - openff-nagl-base >=0.5.2     # charging
+  - openff-nagl-models
+  - openff-qcsubmit >=0.57.0
+  - qcportal                     # QCArchive client (DFT download)
+  - rustworkx                    # graph backend for openff-pablo
+  - pyxdg                        # openff-pablo (XDG cache paths)
+  - gemmi                        # openff-pablo (CCD / structure parsing)
+
+  # --- Fitting stack (smee + descent + torch) ---
+  - smee >=0.17.0
+  - descent >=0.6.0
+  - pytorch >=2.6
+  - pytorch-lightning >=2.6.0,!=2.6.2,!=2.6.3   # 2.6.2/2.6.3 are known-bad
+  - tensorboard
+  - tensorboardx >=2.6.2.2
+
+  # --- CUDA / GPU (mirrors pixi.toml's [feature.cuda]) ---
+  - cuda-version 12.9.*
+  - pytorch-gpu >=2.6
+
+  # --- Data / analysis ---
+  - mdanalysis >=2.10
+  - matplotlib >=3.10.5
+  - pandas >=2.0                 # the notebook uses pandas for dataframes
+  - polars >=1.33.1              # still used by a few helper functions
+  - pydantic >=2.0,<3
+  - json5 >=0.12.1
+  - altair >=5.4.0
+  - statsmodels                  # integrated_autocorr_time
+  - datasets                     # HuggingFace datasets (descent dataset format)
+
+  # --- PRESTO / MLIP stack ---
+  - openmm-ml >=1.5
+  - ase                          # Egret-1 single-point relabel
+  - smirnoff-plugins >=0.0.4
+  - loguru
+  - mdtraj
+  - h5py
+
+  # --- Notebook + tooling ---
+  - jupyterlab >=4
+  - ipywidgets >=8
+  - nglview >=3.0.6,<3.1.0
+  - ipython
+  - jupyterlab_execute_time
+  - jupyterlab-lsp
+  - jedi-language-server
+  - jupyterlab_code_formatter
+  - black
+  - isort
+  - tqdm
+  - pip
+  - git
+
+  - pip:
+    # MACE backend (Egret-1 MLP, used by PRESTO and the Fit-2 relabel)
+    - mace-torch
+    # SwiftPol: polymer builder used to construct the PEG chain
+    - "git+https://github.com/matta-research-group/SwiftPol.git@main"
+    # PRESTO: installed from git (conda-forge 0.8.1 predates the polyfill.js
+    # security patch; install from main until >=0.8.2 lands on conda-forge)
+    - "git+https://github.com/cole-group/presto.git@main"
+    # openff-pablo: residue-aware PDB reader for Part 1.3 (not on PyPI/conda yet)
+    # tracks main (0.2.x); the notebook residue tiling targets the 0.2 linking model
+    - "git+https://github.com/openforcefield/openff-pablo.git@main"

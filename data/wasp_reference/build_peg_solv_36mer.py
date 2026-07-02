@@ -2,17 +2,17 @@
 """Download the WaSP conf1 production PDB and convert it (with MDAnalysis) into the
 residue-tiled peg_solv_36mer.pdb that openff-pablo reads.
 
+Required for demo-ing the path where we take advantage of consistent residue
+and atom names.
+
 1. Download ``production_topology.pdb`` from the public shirtsgroup/WaSP_simulations
    repo (a single PEG chain CH3-O-(CH2CH2O)36-CH3 in 14,061 TIP3P waters).
 2. Walk the PEG backbone using the PDB's own CONECT bonds, then use MDAnalysis to
-   reorder + re-residue + rename the 261 PEG atoms into a regular tiling:
-     * a fused start cap  MES = CH3-O-CH2-CH2  (resid 1, 11 atoms)
-     * 35 OCC monomers    O-CH2-CH2            (resids 2..36, 7 atoms each)
-     * an end cap         MEE = O-CH3          (resid 37, 5 atoms)
-   so every residue carrying the C2->O1 ether linking_bond holds BOTH linking
-   atoms (C2 + O1), which openff-pablo >= 0.2 requires. Water is copied verbatim
-   with its atoms renamed to canonical O / H1 / H2 (the multi-chain B-G resid
-   encoding, needed because resid maxes out at 9999, is preserved untouched).
+   reorder + re-residue + rename the 261 PEG atoms into a regular tiling that reads
+   CPL -> OCC x36 -> CPR with resids numbered from 1:
+     * a start cap  CPL = CH3       (resid 1, 4 atoms)
+     * 36 OCC monomers  O-CH2-CH2   (resids 2..37, 7 atoms each)
+     * an end cap   CPR = O-CH3     (resid 38, 5 atoms)
 
     pixi run python data/wasp_reference/build_peg_solv_36mer.py
 """
@@ -33,13 +33,16 @@ N_MONOMERS = 36
 
 # Atom order within each residue (residue-contiguous output so readers don't fragment).
 ORDER_IN_RES = {
-    "MES": ["CM", "HM1", "HM2", "HM3", "O1", "C1", "H11", "H12", "C2", "H21", "H22"],
+    "CPL": ["C2", "H21", "H22", "H23"],
     "OCC": ["O1", "C1", "H11", "H12", "C2", "H21", "H22"],
-    "MEE": ["O1", "C2", "H21", "H22", "H23"],
+    "CPR": ["O1", "C2", "H21", "H22", "H23"],
 }
 
 
 def download():
+    if RAW_PDB.exists():
+        print(f"Using cached {RAW_PDB}  ({RAW_PDB.stat().st_size / 1e6:.1f} MB)")
+        return
     RAW_PDB.parent.mkdir(parents=True, exist_ok=True)
     print(f"Downloading {RAW_URL}")
     urllib.request.urlretrieve(RAW_URL, RAW_PDB)
@@ -91,27 +94,22 @@ def peg_residue_map(peg):
         for k, h in enumerate(hyd(c_idx), start=1):
             put(h, rn, ri, f"H{carbon}{k}")
 
-    # Fused start cap MES = CH3-O-CH2-CH2 (carries both linking atoms O1 + C2).
-    put(seq[0], "MES", 1, "CM")
-    put_h(seq[0], "MES", 1, "M")
-    put(seq[1], "MES", 1, "O1")
-    put(seq[2], "MES", 1, "C1")
-    put_h(seq[2], "MES", 1, "1")
-    put(seq[3], "MES", 1, "C2")
-    put_h(seq[3], "MES", 1, "2")
-    # 35 OCC monomers = O-CH2-CH2 (resids 2..36).
-    for m in range(1, N_MONOMERS):
+    # Start cap CPL = CH3 (resid 1; methyl named C2 so it carries the forward C2->O1 link).
+    put(seq[0], "CPL", 1, "C2")
+    put_h(seq[0], "CPL", 1, "2")
+    # 36 OCC monomers = O-CH2-CH2 (resids 2..37); O1 links back, C2 links forward.
+    for m in range(N_MONOMERS):
         o1, c1, c2 = seq[1 + 3 * m], seq[2 + 3 * m], seq[3 + 3 * m]
-        rid = 1 + m
+        rid = 2 + m
         put(o1, "OCC", rid, "O1")
         put(c1, "OCC", rid, "C1")
         put_h(c1, "OCC", rid, "1")
         put(c2, "OCC", rid, "C2")
         put_h(c2, "OCC", rid, "2")
-    # End cap MEE = O-CH3 (resid 37; methyl named C2 so MEE also carries two atoms).
-    put(seq[109], "MEE", 37, "O1")
-    put(seq[110], "MEE", 37, "C2")
-    put_h(seq[110], "MEE", 37, "2")
+    # End cap CPR = O-CH3 (resid 38; methyl named C2).
+    put(seq[109], "CPR", 38, "O1")
+    put(seq[110], "CPR", 38, "C2")
+    put_h(seq[110], "CPR", 38, "2")
     assert len(res) == 261
     return res
 
@@ -198,7 +196,7 @@ def main():
     OUT_PDB.write_text("\n".join(out) + "\n")
     print(
         f"Wrote {OUT_PDB}\n"
-        f"  PEG: MES + {N_MONOMERS - 1} OCC + MEE ({len(peg_lines)} atoms); "
+        f"  PEG: CPL + {N_MONOMERS} OCC + CPR ({len(peg_lines)} atoms); "
         f"{len(water_lines)} water atoms renamed to O/H1/H2"
     )
 

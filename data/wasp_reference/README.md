@@ -7,7 +7,7 @@ from [Davel et al.](https://github.com/shirtsgroup/WaSP_simulations).
 
 | File | What |
 |---|---|
-| `peg_solv_36mer.pdb` | the MD starting structure — **42 444 atoms** (1 PEG + 14 061 water), re-residued so **openff-pablo** can read it: a fused start cap `MES` (CH3-O-CH2-CH2), 35 `OCC` (O-CH2-CH2) monomers, an end cap `MEE` (O-CH3), plus `HOH` water. Read by `scripts/run_md_explicit.py` and the notebook's Part 1.3 (`build_pablo_topology`). |
+| `peg_solv_36mer.pdb` | the MD starting structure — **42 444 atoms** (1 PEG + 14 061 water), re-residued so **openff-pablo** can read it: a start cap `CPL` (CH3, resid 1), 36 `OCC` (O-CH2-CH2) monomers (resids 2–37), an end cap `CPR` (O-CH3, resid 38), plus `HOH` water. |
 | `build_peg_solv_36mer.py` | regenerates `peg_solv_36mer.pdb` from the WaSP source (below). |
 
 ## Regenerating `peg_solv_36mer.pdb`
@@ -17,11 +17,11 @@ pixi run python data/wasp_reference/build_peg_solv_36mer.py
 ```
 
 The script:
-1. Downloads the original `production_topology.pdb` from the public WaSP repo
-   via its raw URL (`raw.githubusercontent.com/shirtsgroup/WaSP_simulations/main/wasp_sims/peg_modified/Espaloma-AM1-BCC/conf1/production/production_topology.pdb`),
-   to a transient `raw_peg.pdb`.
+1. Uses the local `raw_peg.pdb` if present; otherwise downloads the original
+   `production_topology.pdb` from the public WaSP repo via its raw URL
+   (`raw.githubusercontent.com/shirtsgroup/WaSP_simulations/main/wasp_sims/peg_modified/Espaloma-AM1-BCC/conf1/production/production_topology.pdb`)
+   to `raw_peg.pdb`.
 2. Reformats the file with MDAnalysis: reorders, re-residues, renames the 261 PEG atoms into the regular
-   `MES`/`OCC`/`MEE` tiling that openff-pablo's residue definitions match in the notebook
-   (so every linking residue carries both its `C2` + `O1` linking atoms).
-   Water atoms are renamed to the canonical `O`/`H1`/`H2`; PEG `CONECT` records are written so
-   pablo can establish the inter-residue links.
+   `CPL`/`OCC`/`CPR` tiling (resids numbered from 1) just to streamline the demo a bit;
+   we want to demonstrate the Pablo pathway of parsing via atom + residue name,
+   and we want to run analysis easily with MDAnalysis.

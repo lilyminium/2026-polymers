@@ -7,24 +7,21 @@ platforms = ["linux-64", "osx-64", "osx-arm64"]
 license = "MIT"
 
 [dependencies]
-# openff-qcsubmit caps python at <3.13
 python = ">=3.12,<3.13"
 
-# OpenFF stack
-# openff-toolkit-examples pulls in rdkit, openmm, openff-toolkit
 openff-toolkit = ">=0.17.1"
-openff-nagl-base = ">=0.5.2" # for charging
+openff-nagl-base = ">=0.5.2"
 openff-nagl-models = "*"
 openff-qcsubmit = ">=0.57.0"
-qcportal = "*"  # QCArchive client for the DFT torsiondrive download
-openff-packmol = "*"  # pack_box (Part 1.2 solvated-box demo)
-packmol = "*"  # the packmol binary openff-packmol drives
+qcportal = "*"
+openff-packmol = "*"
+packmol = "*"
 rdkit = ">=2024.09"
-rustworkx = "*"  # graph backend for openff-pablo
-pyxdg = "*"  # openff-pablo (XDG cache paths)
-gemmi = "*"  # openff-pablo (CCD / structure parsing)
+# pablo dependencies
+rustworkx = "*"
+pyxdg = "*"
+gemmi = "*"
 
-# Fitting stack
 smee = ">=0.17.0"
 descent = ">=0.6.0"
 pytorch = ">=2.6"
@@ -33,33 +30,25 @@ pytorch-lightning = ">=2.6.0,!=2.6.2,!=2.6.3"
 tensorboard = "*"
 tensorboardx = ">=2.6.2.2"
 
-# Data / analysis
 mdanalysis = ">=2.10"
 matplotlib = ">=3.10.5"
 pandas = ">=2.0"
 polars = ">=1.33.1"
-statsmodels = "*"  # integrated_autocorr_time (statsmodels.tsa.stattools.acf)
+statsmodels = "*"
 pydantic = ">=2.0,<3"
 json5 = ">=0.12.1"
 altair = ">=5.4.0"
 
-# HuggingFace datasets
 datasets = "*"
-# huggingface_hub = "*"
 
-# Presto deps (bespoke FF generator). conda-forge channels for the
-# OpenMM-ML stack; mace-torch + presto come via PyPI below. We use
-# Egret-1 (a MACE-based MLP) on CPU in case workshop machine has
-# no CUDA
 openmm-ml = ">=1.5"
-ase = "*"  # Egret-1 single-point relabel (recompute_with_egret)
+ase = "*"
 smirnoff-plugins = ">=0.0.4"
 loguru = "*"
 mdtraj = "*"
 h5py = "*"
 # ambertools = "*"
 
-# Notebook + dev
 jupyterlab = ">=4"
 ipywidgets = ">=8"
 nglview = ">=3.0.6,<3.1.0"
@@ -72,37 +61,22 @@ black = "*"
 isort = "*"
 tqdm = "*"
 
-# Build deps for installing stuff from git
 pip = "*"
 git = "*"
 
 [pypi-dependencies]
-# SwiftPol: polymer builder used to construct the PEG chain.
 swiftpol = { git = "https://github.com/matta-research-group/SwiftPol.git", branch = "main" }
-# MACE backend (used by Presto via Egret-1).
 mace-torch = "*"
 # Presto: could install v0.8.1 from conda-forge, but missing patch to remove
 # malicious polyfill.js ; wait to v0.8.2 for conda-forge install to be safe
 presto = { git = "https://github.com/cole-group/presto.git", branch = "main" }
-# openff-pablo: residue-aware PDB reader used in Part 1.3 (not on PyPI / conda-forge yet).
-# Tracks main (0.2.x); the notebook MES/OCC/MEE residue tiling targets the 0.2 linking model.
+# openff-pablo is not on PyPI / conda-forge yet.
 openff-pablo = { git = "https://github.com/openforcefield/openff-pablo.git", branch = "main" }
 
 [tasks]
 workshop = "jupyter lab --ServerApp.iopub_data_rate_limit=10000000 peg_workshop_combined.ipynb"
 
-# CUDA env for a GPU machine (the scripts/ jobs): the `default` env solves a
-# CPU-only pytorch on linux-64 (same as the laptop), so torch.cuda.is_available()
-# is False even with a GPU allocated -- and torch.load() then rejects a CUDA-tagged
-# checkpoint. `pytorch-gpu` is conda-forge's forcing meta-package (the plain
-# `pytorch` build satisfying `pytorch >=2.6` is otherwise ambiguous CPU/CUDA).
-# cuda-version is pinned to 12.9 (the documented PRESTO floor; headroom for older
-# drivers). Activate with `pixi run -e cuda ...` (or POLYMERS_PIXI_ENV=cuda for the
-# sbatch scripts) on the GPU machine.
-# FIXME(cluster): solved against conda-forge linux-64 repodata, not tested on a GPU
-# -- verify torch.cuda.is_available() is True on a GPU node. The cuda env locks on
-# the Linux GPU machine, not the Mac (osx-arm64 can't solve a linux-64 env); on the
-# Mac use `pixi install --frozen` / `pixi run --frozen`.
+# cuda for gpu acceleration
 [feature.cuda]
 platforms = ["linux-64"]
 system-requirements = { cuda = "12.9" }

@@ -18,34 +18,24 @@ import time
 
 import MDAnalysis as mda
 import openmm
-from openff.pablo import ResidueDefinition, topology_from_pdb
+from openff.pablo import STD_CCD_CACHE, ResidueDefinition, topology_from_pdb
 from openff.pablo.residue import BondDefinition
 from openff.toolkit import ForceField
 from openmm import MonteCarloBarostat, app
 from openmm import unit as ommunit
 
-ROOT = pathlib.Path(__file__).resolve().parents[1]
-
-# Reformatted, residue-tiled PEG PDB (data/wasp_reference/build_peg_solv_36mer.py) that Pablo can
-# read: a fused start residue MES = CH3-O-CH2-CH2, 35 OCC = O-CH2-CH2 monomers,
-# and an end cap MEE = O-CH3.
-WASP = ROOT / "data" / "wasp_reference"
-DEFAULT_PDB = WASP / "peg_solv_36mer.pdb"
-
-
 def build_pablo_topology(pdb_path):
     """Solvated PEG topology via openff-pablo (mirrors the notebook's Part 1.3 cell).
 
-    Every residue carrying the C2->O1 ether linking_bond holds BOTH linking atoms
-    as retained atoms (required by openff-pablo >= 0.2), so the terminal methyls
-    are fused into the end residues. Water resolves from the CCD automatically.
+    The PEG is tiled CPL -> OCC x36 -> CPR, linked head-to-tail by the C2->O1
+    ether bond (a residue's C2 bonds the NEXT residue's O1). Water resolves from
+    the CCD automatically.
     """
     ether = BondDefinition.with_defaults("C2", "O1", order=1)
-    mes = ResidueDefinition.from_smiles(
-        mapped_smiles="[C:1]([H:2])([H:3])([H:4])[O:5][C:6]([H:7])([H:8])[C:9]([H:10])([H:11])[H:12]",
-        atom_names={1: "CM", 2: "HM1", 3: "HM2", 4: "HM3", 5: "O1", 6: "C1",
-                    7: "H11", 8: "H12", 9: "C2", 10: "H21", 11: "H22", 12: "H23"},
-        residue_name="MES", leaving_atoms=(12,), linking_bond=ether,
+    cpl = ResidueDefinition.from_smiles(
+        mapped_smiles="[C:1]([H:2])([H:3])([H:4])[H:5]",
+        atom_names={1: "C2", 2: "H21", 3: "H22", 4: "H23", 5: "H24"},
+        residue_name="CPL", leaving_atoms=(5,), linking_bond=ether,
     )
     occ = ResidueDefinition.from_smiles(
         mapped_smiles="[O:1]([C:2]([H:4])([H:5])[C:3]([H:6])([H:7])[H:9])[H:8]",
@@ -53,19 +43,15 @@ def build_pablo_topology(pdb_path):
                     6: "H21", 7: "H22", 8: "HO1", 9: "H23"},
         residue_name="OCC", leaving_atoms=(8, 9), linking_bond=ether,
     )
-    mee = ResidueDefinition.from_smiles(
+    cpr = ResidueDefinition.from_smiles(
         mapped_smiles="[O:1]([C:2]([H:3])([H:4])[H:5])[H:6]",
         atom_names={1: "O1", 2: "C2", 3: "H21", 4: "H22", 5: "H23", 6: "HO1"},
-        residue_name="MEE", leaving_atoms=(6,), linking_bond=ether,
+        residue_name="CPR", leaving_atoms=(6,), linking_bond=ether,
     )
-    return topology_from_pdb(str(pdb_path), additional_definitions=[mes, occ, mee])
-
-
-TEMPERATURE_K = 300.0
-PRESSURE_ATM = 1.0
-TIMESTEP_FS = 2.0
-FRICTION_PER_PS = 1.0
-BAROSTAT_FREQ = 25
+    # Water resolves from the CCD; we pass only the three custom PEG residues.
+    return topology_from_pdb(
+        str(pdb_path), residue_library=STD_CCD_CACHE.with_([cpl, occ, cpr])
+    )
 
 
 def main():
@@ -75,16 +61,51 @@ def main():
         default="openff-2.3.0.offxml",
         help="Fitted SMIRNOFF FF (or baseline name). Default Sage 2.3.0.",
     )
-    parser.add_argument("--pdb", type=pathlib.Path, default=DEFAULT_PDB)
-    parser.add_argument("--device", default="CUDA", help="CUDA (Iris) / CPU / OpenCL")
+    parser.add_argument(
+        "--pdb",
+        type=pathlib.Path,
+        default=pathlib.Path("data/wasp_reference/peg_solv_36mer.pdb"),
+        help="Starting solvated PEG PDB. Default: %(default)s.",
+    )
+    parser.add_argument("--device", default="CUDA", help="CUDA / CPU / OpenCL")
     parser.add_argument(
         "--equil-ps", type=float, default=100.0, help="NPT equilibration"
     )
     parser.add_argument("--prod-ns", type=float, default=2.0, help="NPT production")
     parser.add_argument("--report-ps", type=float, default=10.0)
+    parser.add_argument(
+        "--temperature-k",
+        type=float,
+        default=300.0,
+        help="Temperature in K. Default: %(default)s.",
+    )
+    parser.add_argument(
+        "--pressure-atm",
+        type=float,
+        default=1.0,
+        help="Pressure in atm. Default: %(default)s.",
+    )
+    parser.add_argument(
+        "--timestep-fs",
+        type=float,
+        default=2.0,
+        help="Integrator timestep in fs. Default: %(default)s.",
+    )
+    parser.add_argument(
+        "--friction-per-ps",
+        type=float,
+        default=1.0,
+        help="Langevin friction in 1/ps. Default: %(default)s.",
+    )
+    parser.add_argument(
+        "--barostat-freq",
+        type=int,
+        default=25,
+        help="Monte Carlo barostat frequency in steps. Default: %(default)s.",
+    )
     parser.add_argument("--label", default="dft")
     parser.add_argument(
-        "--out-dir", type=pathlib.Path, default=ROOT / "artifacts" / "md_explicit"
+        "--out-dir", type=pathlib.Path, default="artifacts/md_explicit"
     )
     args = parser.parse_args()
 
@@ -92,7 +113,7 @@ def main():
 
     print(f"Force field : {args.offxml}")
     print(f"Start PDB   : {args.pdb}")
-    print("Building topology with openff-pablo (fused-cap residue definitions)...")
+    print("Building topology with openff-pablo (CPL/OCC/CPR residue definitions)...")
     top = build_pablo_topology(args.pdb)
     print(f"  topology: {top.n_atoms} atoms, {top.n_molecules} molecules")
 
@@ -105,13 +126,15 @@ def main():
     positions = interchange.positions.to_openmm()
 
     barostat = MonteCarloBarostat(
-        PRESSURE_ATM * ommunit.atmosphere, TEMPERATURE_K * ommunit.kelvin, BAROSTAT_FREQ
+        args.pressure_atm * ommunit.atmosphere,
+        args.temperature_k * ommunit.kelvin,
+        args.barostat_freq,
     )
     system.addForce(barostat)
     integrator = openmm.LangevinMiddleIntegrator(
-        TEMPERATURE_K * ommunit.kelvin,
-        FRICTION_PER_PS / ommunit.picosecond,
-        TIMESTEP_FS * ommunit.femtosecond,
+        args.temperature_k * ommunit.kelvin,
+        args.friction_per_ps / ommunit.picosecond,
+        args.timestep_fs * ommunit.femtosecond,
     )
     platform = openmm.Platform.getPlatformByName(args.device)
     sim = app.Simulation(omm_top, system, integrator, platform)
@@ -119,11 +142,11 @@ def main():
 
     print("Minimising...")
     sim.minimizeEnergy(maxIterations=1000)
-    sim.context.setVelocitiesToTemperature(TEMPERATURE_K * ommunit.kelvin)
+    sim.context.setVelocitiesToTemperature(args.temperature_k * ommunit.kelvin)
 
-    report_steps = int(args.report_ps * 1000 / TIMESTEP_FS)
-    n_equil = int(args.equil_ps * 1000 / TIMESTEP_FS)
-    n_prod = int(args.prod_ns * 1e6 / TIMESTEP_FS)
+    report_steps = int(args.report_ps * 1000 / args.timestep_fs)
+    n_equil = int(args.equil_ps * 1000 / args.timestep_fs)
+    n_prod = int(args.prod_ns * 1e6 / args.timestep_fs)
 
     # Full system is simulated, then water is stripped afterwards -- so the
     # topology + trajectory are written to temporary files first.
@@ -159,17 +182,20 @@ def main():
     # O-C-C-O analyses need, and ~99% smaller than the solvated system.
     print("Writing water-stripped PEG-only topology + trajectory (MDAnalysis)...")
     u = mda.Universe(str(full_top), str(full_traj))
-    peg = u.select_atoms("resname MES OCC MEE")  # PEG = MES + 35 OCC + MEE
-    assert peg.n_atoms == 261, f"expected 261 PEG atoms, got {peg.n_atoms}"
+    peg_selection = "resname CPL OCC CPR"  # PEG = CPL + 36 OCC + CPR
+    peg = u.select_atoms(peg_selection)
+    expected_peg_atoms = 261
+    if peg.n_atoms != expected_peg_atoms:
+        raise ValueError(f"expected {expected_peg_atoms} PEG atoms, got {peg.n_atoms}")
+
     peg_top = args.out_dir / f"explicit_{args.label}_top.pdb"
     peg_traj = args.out_dir / f"explicit_{args.label}_traj.dcd"
+    n_frames = len(u.trajectory)
+
     peg.write(str(peg_top))
     with mda.Writer(str(peg_traj), peg.n_atoms) as writer:
         for _ in u.trajectory:
             writer.write(peg)
-    n_frames = len(u.trajectory)
-    full_top.unlink()
-    full_traj.unlink()
     print(f"  -> {peg_top.name}, {peg_traj.name}  ({peg.n_atoms} atoms, {n_frames} frames)")
 
 

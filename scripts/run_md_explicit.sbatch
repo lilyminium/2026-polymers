@@ -1,49 +1,45 @@
 #!/usr/bin/env bash
-# Explicit-solvent MD (density + Rg) on a GPU node. Based on
-# /Volumes/lilywang/pydev/ffvq/slurm/train.sbatch (pixi env, GPU).
-#
-# Submit one job per force field. The dft/egret inputs are SNAPSHOTS of the
-# notebook-trained fits (artifacts/peg_md_{dft,egret}.offxml); presto is the
-# bespoke artifact. e.g.:
-#   sbatch scripts/run_md_explicit.sbatch artifacts/peg_md_dft.offxml   dft      100
-#   sbatch scripts/run_md_explicit.sbatch artifacts/peg_md_egret.offxml egret    100
-#   sbatch scripts/run_md_explicit.sbatch artifacts/peg_presto.offxml   presto   100
-#   sbatch scripts/run_md_explicit.sbatch openff-2.3.0.offxml           baseline 100
-#
-# args: $1 = offxml (default artifacts/peg_md_dft.offxml)
-#       $2 = label  (default dft) -> artifacts/md_explicit/explicit_<label>_*
-#       $3 = production ns (default 100)
-#
-# FIXME(cluster): lines marked FIXME are site-specific. See scripts/README.md.
-
 #SBATCH -J peg-md
-#SBATCH -p gpu                       # FIXME(cluster): GPU partition/queue ("gpu" on Iris)
-#SBATCH -t 24:00:00                  # 100 ns of ~42k atoms is hours on a GPU; pad
+#SBATCH -p gpu
+#SBATCH -t 24:00:00                  # took me ~5 hours
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --gpus-per-task=1            # FIXME(cluster): Iris-specific GPU request
-#SBATCH --cpus-per-task=4
+#SBATCH --array=0-3
+#SBATCH --gpus-per-task=1
 #SBATCH --mem=16gb
-#SBATCH --output slurm-%x.%A.out
-# #SBATCH --exclude=iscc006          # FIXME(cluster): uncomment if needed (Iris-specific)
-# #SBATCH --account=<your-account>   # FIXME(cluster): set if your site requires it
+#SBATCH --output slurm-%x.%A_%a.out
+# #SBATCH --exclude=iscc006          # Iris-specific
 
+# --- info ----------------------------------------------------------------------
+# Explicit-solvent MD on GPU
+#
+# Array tasks:
+#   0 = dft      artifacts/peg_fitted_dft_live.offxml
+#   1 = egret    artifacts/peg_fitted_egret_live.offxml
+#   2 = presto   artifacts/peg_presto.offxml
+#   3 = baseline openff-2.3.0.offxml
+
+# --- setup --------------------------------------------------------------------
 set -eo pipefail
 
-OFFXML="${1:-artifacts/peg_md_dft.offxml}"
-LABEL="${2:-dft}"
-PROD_NS="${3:-100}"
+LABELS=(dft egret presto baseline)
+OFFXMLS=(
+    artifacts/peg_fitted_dft_live.offxml
+    artifacts/peg_fitted_egret_live.offxml
+    artifacts/peg_presto.offxml
+    openff-2.3.0.offxml
+)
+TASK_ID="${SLURM_ARRAY_TASK_ID:-0}"
+LABEL="${LABELS[$TASK_ID]:-}"
+OFFXML="${OFFXMLS[$TASK_ID]:-}"
 
-# --- repo location ------------------------------------------------------------
-REPO="${POLYMERS_REPO:-$SLURM_SUBMIT_DIR}"   # FIXME(cluster): your Iris checkout
-cd "$REPO"
+if [[ -z "$LABEL" || -z "$OFFXML" ]]; then
+    echo "invalid SLURM_ARRAY_TASK_ID=${TASK_ID}; expected 0-3" >&2
+    exit 2
+fi
 
 # --- environment --------------------------------------------------------------
 source ~/.bashrc
-# CUDA-enabled pixi env, default; override with POLYMERS_PIXI_ENV if needed
-# (see scripts/README.md item 2-3 -- the cuda env's lock entries must be
-# produced on Iris, not the Mac).
-PIXI_ENV="${POLYMERS_PIXI_ENV:-cuda}"
 
 # --- GPU sanity ---------------------------------------------------------------
 nvidia-smi || { echo "no GPU visible -- check partition/--gpus-per-task"; exit 1; }
@@ -52,10 +48,14 @@ nvidia-smi || { echo "no GPU visible -- check partition/--gpus-per-task"; exit 1
 # Reads the WaSP conf1 PDB (vendored under data/wasp_reference/), parameterises
 # PEG + TIP3P with the chosen FF, NPT-equilibrates then produces, writing
 # trajectory + state CSV under artifacts/md_explicit/.
-pixi run -e "$PIXI_ENV" python -u scripts/run_md_explicit.py \
-    --offxml "$OFFXML" \
-    --label "$LABEL" \
-    --prod-ns "$PROD_NS" \
-    --device CUDA
+echo "array task ${TASK_ID}: ${LABEL} (${OFFXML})"
+pixi run -e cuda python -u scripts/run_md_explicit.py \
+    --offxml    "$OFFXML" \
+    --pdb       "data/wasp_reference/peg_solv_36mer.pdb" \
+    --label     "$LABEL" \
+    --out-dir   "artifacts/cached_md" \
+    --equil-ps  100 \
+    --prod-ns   100 \
+    --device    "CUDA"
 
-echo "done: MD ${LABEL} (${PROD_NS} ns) -> artifacts/md_explicit/explicit_${LABEL}_*"
+echo "done: MD ${LABEL} (100 ns) -> artifacts/cached_md/explicit_${LABEL}_*"

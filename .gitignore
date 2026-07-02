@@ -6,17 +6,20 @@ __pycache__/
 # Local environments and package caches
 .venv*/
 .pixi/
-
-# Generated logs are provenance/debugging artifacts, not workshop inputs.
 logs/*.log
 
 # OS/editor noise
 .DS_Store
 .vscode/
-.claude/        # Claude Code local config/tooling (not workshop content)
 
 # intermediate workshop files
-workflow_settings.yaml
 small_gmx*
 *.bak*
 .virtual_documents/
+
+# PRESTO's own working-directory output
+initial_statistics/
+test_data/
+training_iteration_*/
+plots/
+workflow_settings.yaml
